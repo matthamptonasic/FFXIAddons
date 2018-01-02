@@ -1,87 +1,71 @@
 _addon.name = 'Sparks'
-
 _addon.author = 'Brax(orig) - Sammeh Modified - v 2.0.0.2'
-
 _addon.version = '2.0.0.2'
-
 _addon.command = 'sparks'
-
 
 -- 2.0.0.2  Added version for my plugin.  Added in //sparks reset  and cleaned up some output 
 
 require('tables')
-
 require('chat')
-
 require('logger')
-
 require('functions')
-
+require 'pack'
 packets = require('packets')
-
 json  = require('json')
-
 files = require('files')
-
 config = require('config')
-
 db = require('map')
-
 res = require('resources')
 
 npc_name = ""
 
-
 pkt = {}
 
 all_temp_items = {}
-
 current_temp_items = {}
 
-
-
-valid_zones = T{"Western Adoulin","Southern San d'Oria","Windurst Woods","Bastok Markets","Escha - Ru'Aun","Escha - Zi'Tah","Reisinjima"}
+valid_zones = T{
+	"Western Adoulin",
+	"Southern San d'Oria",
+	"Windurst Woods",
+	"Bastok Markets",
+	"Escha - Ru'Aun",
+	"Escha - Zi'Tah",
+	"Reisinjima"
+}
 
 valid_zones = {
-
 	[256] = {npc="Eternal Flame", menu=5081}, -- Western Adoulin
-
 	[230] = {npc="Rolandienne", menu=995}, -- Southern San d'Oria
-
 	[235] = {npc="Isakoth", menu=26}, -- Bastok Markets
-
 	[241] = {npc="Fhelm Jobeizat", menu=850}, -- Windurst Woods
-	
 	[288] = {npc="Affi", menu=9701},  -- Escha Zitah
-	
 	[289] = {npc="Dremi", menu=9701},  -- Escha RuAun
-	
 	[291] = {npc="Shiftrix", menu=9701},  -- Reisinjima
+}
 	
-	}
-	
-
-
-
-
 defaults = {}
-
 settings = config.load(defaults)
 
-
-
-
 busy = false
-
-
-
+sparks = 99999
 
 windower.register_event('addon command', function(...)
     local args = T{...}
     local cmd = args[1]
 	args:remove(1)
 	for i,v in pairs(args) do args[i]=windower.convert_auto_trans(args[i]) end
-	local item = table.concat(args," "):lower()
+	local itemName = table.concat(args," "):lower()
+	local item = fetch_db(itemName)
+	if item == nil then
+		return
+	end
+	local canBuyQuan = 0
+	if item.Cost == 0 then
+		canBuyQuan = 1
+	else
+		canBuyQuan = math.floor(sparks / item.Cost)
+	end
 	ki = 0
 	if cmd == 'buy' then
 		if not busy then
@@ -100,21 +84,29 @@ windower.register_event('addon command', function(...)
 		local currentzone = windower.ffxi.get_info()['zone']
 		if currentzone == 241 or currentzone == 230 or currentzone == 235 or currentzone == 256 then 
 			count_inv()
-			windower.add_to_chat(2,"You have "..freeslots.." free slots, buying "..item.. " until full") 
+			buyQuan = freeslots
+			if freeslots > canBuyQuan then
+				buyQuan = canBuyQuan
+			end
+			windower.add_to_chat(2,"You have " .. freeslots .. " free slots and " .. sparks .. " sparks, buying " .. buyQuan .. "x " .. itemName) 
 			local currentloop = 0
-			while currentloop < freeslots do
+			while currentloop < buyQuan do
+				if item.Cost > sparks then
+					windower.add_to_chat(8,"We ran out of sparks...")
+					return
+				end
 				currentloop = currentloop + 1
-				windower.add_to_chat(8,"Buying Item: "..item.." Loop: "..currentloop)
+				windower.add_to_chat(8,"Buying Item: " .. itemName .. " Loop: " .. currentloop)
 				if not busy then
 					pkt = validate(item)
 					if pkt then
 						busy = true
-						poke_npc(pkt['Target'],pkt['Target Index'])
+						poke_npc(pkt['Target'], pkt['Target Index'])
 					else 
-						windower.add_to_chat(2,"Can't find item in menu")
+						windower.add_to_chat(2, "Can't find item in menu")
 					end
 				else
-					windower.add_to_chat(2,"Still buying last item")
+					windower.add_to_chat(2, "Still buying last item")
 				end
 				sleepcounter = 0
 				while busy and sleepcounter < 5 do
@@ -131,7 +123,7 @@ windower.register_event('addon command', function(...)
 	elseif cmd == 'buyki' then
 		if not busy then
 			ki = 1
-			windower.add_to_chat(8,"Buying KI: "..item)
+			windower.add_to_chat(8,"Buying KI: " .. itemName)
 			pkt = validate(item)
 			if pkt then
 				busy = true
@@ -145,7 +137,7 @@ windower.register_event('addon command', function(...)
 		end
 
 	elseif cmd == 'find' then
-		table.vprint(fetch_db(item))
+		table.vprint(item)
 		
 	elseif cmd == 'buyalltemps' then
 		local currentzone = windower.ffxi.get_info()['zone']
@@ -162,8 +154,8 @@ windower.register_event('addon command', function(...)
 					for keyb,itemb in pairs(db) do
 						if itemb.TempItem == 1 then
 							if keyb == itema then
-								local item = itemb.Name:lower()
-								windower.add_to_chat(8,'Buying Temp Item:'..item)
+								local item = fetch_db(itemb.Name:lower())
+								windower.add_to_chat(8,'Buying Temp Item:' .. item["Name"])
 								if not busy then
 									pkt = validate(item)
 									if pkt then
@@ -244,8 +236,8 @@ windower.register_event('addon command', function(...)
 					for keyb,itemb in pairs(db) do
 						if itemb.TempItem == 2 then
 							if itemb.Name:lower() == itema:lower() then
-								local item = itemb.Name:lower()
-								windower.add_to_chat(8,'Buying Temp Item:'..item)
+								local item = fetch_db(itemb.Name:lower())
+								windower.add_to_chat(8,'Buying Temp Item:' .. item["Name"])
 								if not busy then
 									pkt = validate(item)
 									if pkt then
@@ -276,9 +268,6 @@ windower.register_event('addon command', function(...)
 	end
 end)
 
-
-
-
 function validate(item)
 	local zone = windower.ffxi.get_info()['zone']
 	local me,target_index,target_id,distance
@@ -298,14 +287,11 @@ function validate(item)
 		end
 
 		if math.sqrt(distance)<6 then
-            local ite = fetch_db(item)
-			if ite then
-				result['Target'] = target_id
-				result['Option Index'] = ite['Option']
-				result['_unknown1'] = ite['Index']
-				result['Target Index'] = target_index
-				result['Zone'] = zone 
-			end
+            result['Target'] = target_id
+			result['Option Index'] = item['Option']
+			result['_unknown1'] = item['Index']
+			result['Target Index'] = target_index
+			result['Zone'] = zone 
 		else
 		windower.add_to_chat(10,"Too far from npc")
 		end
@@ -319,18 +305,13 @@ end
 
 
 
-function fetch_db(item)
-
- for i,v in pairs(db) do
-
-  if string.lower(v.Name) == string.lower(item) then
-
-	return v
-
-  end
-
- end
-
+function fetch_db(itemName)
+	for i,v in pairs(db) do
+		if string.lower(v.Name) == string.lower(itemName) then
+			return v
+		end
+	end
+	return nil
 end
 
 function find_all_tempitems()
@@ -404,10 +385,11 @@ function find_missing_ki()
 	--print(table.concat(missing_ki, ', '))
 end
 
-
 windower.register_event('incoming chunk',function(id,data,modified,injected,blocked)
 
-	if id == 0x034 or id == 0x032 then
+	if id == 0x110 then
+        sparks = data:unpack('I',5)
+	elseif id == 0x034 or id == 0x032 then
 
 	 if busy == true and pkt then
 
@@ -548,7 +530,6 @@ end
 windower.register_event('load', function()
 	find_all_tempitems()
 end)
-
 
 
 
